@@ -1,4 +1,5 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import { Body, Controller, Post, Res, StreamableFile } from '@nestjs/common';
+import type { Response } from 'express';
 import { DocumentService } from './document.service';
 import { AnalyzeDocumentDto } from './dto/analyze-document.dto';
 import { AnalyzeDocumentResponseDto } from './dto/analyze-document.dto';
@@ -13,9 +14,7 @@ export class DocumentController {
   async analyzeDocument(
     @Body() analyzeDocumentDto: AnalyzeDocumentDto,
   ): Promise<AnalyzeDocumentResponseDto> {
-    return this.documentService.analyzeDocument(
-      analyzeDocumentDto.documentContent,
-    );
+    return this.documentService.analyzeDocument(analyzeDocumentDto);
   }
 
   @Post('generate-by-template')
@@ -23,8 +22,26 @@ export class DocumentController {
     @Body() generateByTemplateDto: GenerateByTemplateDto,
   ): Promise<GenerateByTemplateResponseDto> {
     return this.documentService.generateDocumentByTemplate(
-      generateByTemplateDto.documentContent,
-      generateByTemplateDto.templateId,
+      generateByTemplateDto,
     );
+  }
+
+  @Post('generate-by-template-docx')
+  async generateDocumentByTemplateDocx(
+    @Body() generateByTemplateDto: GenerateByTemplateDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { buffer, fileName } =
+      await this.documentService.generateDocumentByTemplateDocx(
+        generateByTemplateDto,
+      );
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
+    return new StreamableFile(buffer);
   }
 }

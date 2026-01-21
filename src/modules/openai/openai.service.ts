@@ -1,9 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { z } from 'zod';
 import { zodTextFormat } from 'openai/helpers/zod';
 
 import { Journal } from '../document/dto/analyze-document.dto';
+import { getGuidelines } from './journal-guidelines';
 
 const JournalSchema = z.object({
   id: z.string(),
@@ -27,23 +29,19 @@ const FormattedArticleSchema = z.object({
   ),
 });
 
-const JOURNAL_GUIDELINES: Record<string, string> = {
-  /**
-   * TODO: Replace these placeholders with real journal requirements.
-   * Keys are templateIds (journal identifiers) coming from the client.
-   */
-  'template-1':
-    'Use an IMRaD structure. Keep language formal and concise. Add clear headings.',
-  'template-2':
-    'Use a structured abstract, then IMRaD. Ensure consistent terminology and citations.',
-};
-
 @Injectable()
 export class OpenAiService {
   private readonly logger = new Logger(OpenAiService.name);
-  private readonly client = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
+  private readonly client: OpenAI;
+
+  constructor(private readonly configService: ConfigService) {
+    const apiKey = this.configService.get<string>('OPENAI_API_KEY');
+    if (!apiKey) {
+      throw new Error('OPENAI_API_KEY is not set');
+    }
+
+    this.client = new OpenAI({ apiKey });
+  }
 
   /**
    * Ask OpenAI to recommend journals for the provided text.
@@ -108,9 +106,7 @@ export class OpenAiService {
     templateId: string,
     articleText: string,
   ): Promise<z.infer<typeof FormattedArticleSchema>> {
-    const guidelines =
-      JOURNAL_GUIDELINES[templateId] ??
-      'Follow common academic publishing standards.';
+    const guidelines = getGuidelines(templateId);
 
     try {
       const response = await this.client.responses.parse({

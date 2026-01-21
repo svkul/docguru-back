@@ -55,8 +55,7 @@ export class GeminiService {
   }
 
   async recommendJournals(text: string): Promise<Journal[]> {
-    try {
-      const prompt = `
+    const prompt = `
 Based on this research article, recommend 3 suitable academic journals for publication. Consider the article's topic, methodology, and scope.
 
 Article text:
@@ -69,23 +68,36 @@ Return STRICT JSON only:
   ]
 }`;
 
+    try {
       const response = await this.ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
       });
       const raw = response.text ?? '';
 
-      if (!raw) return [];
+      if (!raw) {
+        this.logger.warn('Gemini returned empty response');
+        return [];
+      }
 
       const parsed = this.parseJson(raw, JournalsSchema);
       return parsed?.journals ?? [];
     } catch (error) {
-      const err = error as Error;
+      const err = error as Error & {
+        status?: number;
+        error?: { message?: string; code?: number };
+      };
       this.logger.error(
         'Failed to get journal recommendations from Gemini',
         err,
       );
-      return [];
+
+      // Extract error message from API error
+      const errorMessage =
+        err.error?.message ||
+        err.message ||
+        'Failed to get journal recommendations from Gemini';
+      throw new Error(`Gemini API error: ${errorMessage}`);
     }
   }
 
@@ -95,8 +107,7 @@ Return STRICT JSON only:
   ): Promise<UpdatedDocResponse> {
     const guidelines = getGuidelines(templateId);
 
-    try {
-      const prompt = `
+    const prompt = `
 You are a journal formatting assistant. Rewrite the article to comply with the journal guidelines.
 - Apply formatting, structure, and citation style rules from the guidelines.
 - Do NOT invent sources, data, or claims. If information is missing, leave it as-is.
@@ -115,6 +126,7 @@ Journal Guidelines:
 ${guidelines}
 `;
 
+    try {
       const response = await this.ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -130,13 +142,18 @@ ${guidelines}
         }
       );
     } catch (error) {
-      const err = error as Error;
-      this.logger.error('Failed to format article with Gemini', err);
-      return {
-        updatedArticleText: articleText,
-        changeSummary: 'Formatting failed; returning original text.',
-        warnings: ['Gemini request failed.'],
+      const err = error as Error & {
+        status?: number;
+        error?: { message?: string; code?: number };
       };
+      this.logger.error('Failed to format article with Gemini', err);
+
+      // Extract error message from API error
+      const errorMessage =
+        err.error?.message ||
+        err.message ||
+        'Failed to format article with Gemini';
+      throw new Error(`Gemini API error: ${errorMessage}`);
     }
   }
 }

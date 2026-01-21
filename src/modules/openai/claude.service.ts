@@ -78,11 +78,10 @@ export class ClaudeService {
   }
 
   /**
-   * Recommend journals using Claude. Returns [] on parse failure.
+   * Recommend journals using Claude. Throws error on API failure.
    */
   async recommendJournals(text: string): Promise<Journal[]> {
-    try {
-      const prompt = `
+    const prompt = `
 Based on this research article, recommend 3 suitable academic journals for publication. Consider the article's topic, methodology, and scope.
 
 Article text:
@@ -95,6 +94,7 @@ Return STRICT JSON only:
   ]
 }`;
 
+    try {
       const message = await this.client.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 2000,
@@ -105,22 +105,28 @@ Return STRICT JSON only:
       const raw = this.extractTextContent(message);
 
       if (!raw) {
+        this.logger.warn('Claude returned empty response');
         return [];
       }
 
       const parsed = ClaudeJournalsResponseSchema.safeParse(JSON.parse(raw));
       return parsed.success ? parsed.data.journals : [];
     } catch (error) {
+      const err = error as Error & { message?: string; status?: number };
       this.logger.error(
         'Failed to get journal recommendations from Claude',
-        error as Error,
+        err,
       );
-      return [];
+
+      // Extract error message from API error
+      const errorMessage =
+        err.message || 'Failed to get journal recommendations from Claude';
+      throw new Error(`Claude API error: ${errorMessage}`);
     }
   }
 
   /**
-   * Format article for a journal using Claude. Returns minimal fallback on failure.
+   * Format article for a journal using Claude. Throws error on API failure.
    */
   async formatArticleForTemplate(
     templateId: string,
@@ -128,8 +134,7 @@ Return STRICT JSON only:
   ): Promise<ClaudeFormatResponse> {
     const guidelines = getGuidelines(templateId);
 
-    try {
-      const prompt = `
+    const prompt = `
 You are a scientific editor.
 
 Analyze this article against the journal's formatting guidelines and return ONLY a JSON object (no markdown, no explanation) with the required changes.
@@ -154,6 +159,7 @@ Return a JSON object with this structure:
   }
 }`;
 
+    try {
       const message = await this.client.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 4000,
@@ -186,15 +192,13 @@ Return a JSON object with this structure:
             wordCount: { current: 0, required: 0, action: '' },
           };
     } catch (error) {
-      this.logger.error('Failed to format article with Claude', error as Error);
-      return {
-        titleChanges: '',
-        abstractChanges: '',
-        structureChanges: [],
-        citationStyle: '',
-        formattingRules: [],
-        wordCount: { current: 0, required: 0, action: '' },
-      };
+      const err = error as Error & { message?: string; status?: number };
+      this.logger.error('Failed to format article with Claude', err);
+
+      // Extract error message from API error
+      const errorMessage =
+        err.message || 'Failed to format article with Claude';
+      throw new Error(`Claude API error: ${errorMessage}`);
     }
   }
 }
